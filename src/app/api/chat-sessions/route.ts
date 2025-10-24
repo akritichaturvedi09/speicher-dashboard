@@ -1,86 +1,121 @@
 import { NextRequest, NextResponse } from 'next/server';
-import clientPromise from '../../../db/mongodb';
-import type { ChatSession } from '../../../../../speicher-chatbot/src/shared/types';
+import { chatService } from '../../../db/services/chat-service';
+import {
+  validateRequestBody,
+  validateQueryParams,
+  createChatSessionSchema,
+  updateChatSessionSchema,
+  paginationSchema,
+  sessionFiltersSchema,
+  searchSchema,
+  chatHistorySearchSchema,
+  NotFoundError,
+  ConflictError,
+} from '../../../lib/validation';
+import { withMiddleware } from '../../../lib/middleware';
 
-export async function GET(request: NextRequest) {
-  try {
+// GET /api/chat-sessions - List sessions with filtering and pagination
+export const GET = withMiddleware(
+  async (request: NextRequest) => {
     const { searchParams } = new URL(request.url);
-    const status = searchParams.get('status');
-    
-    const client = await clientPromise;
-    const db = client.db('speicher');
-    
-    const filter: any = {};
-    if (status) {
-      const statusArray = status.split(',');
-      filter.status = { $in: statusArray };
-    }
-    
-    const sessions = await db.collection('chatSessions')
-      .find(filter)
-      .sort({ updatedAt: -1 })
-      .toArray();
-    
-    return NextResponse.json(sessions);
-  } catch (error) {
-    console.error('Error fetching chat sessions:', error);
-    return NextResponse.json({ error: 'Failed to fetch sessions' }, { status: 500 });
-  }
-}
+    const searchQuery = searchParams.get('q');
 
-export async function POST(request: NextRequest) {
-  try {
-    const sessionData: Omit<ChatSession, '_id'> = await request.json();
-    
-    const client = await clientPromise;
-    const db = client.db('speicher');
-    
-    const result = await db.collection('chatSessions').insertOne({
-      ...sessionData,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    });
-    
-    const newSession: ChatSession = {
-      _id: result.insertedId.toString(),
-      ...sessionData
+    if (searchQuery) {
+      // Legacy search functionality
+      const searchParams = validateQueryParams(
+        searchSchema,
+        Object.fromEntries(new URL(request.url).searchParams)
+      );
+      const result = await chatService.searchSessions(searchParams.q, {
+        page: searchParams.page,
+        limit: searchParams.limit,
+        sortBy: searchParams.sortBy,
+        sortOrder: searchParams.sortOrder,
+      });
+
+      return NextResponse.json({
+        success: true,
+        data: result.data,
+        pagination: result.pagination,
+      });
+    }
+
+    // Enhanced filtering and pagination for Chat History
+    const allParams = Object.fromEntries(searchParams);
+    const filters = validateQueryParams(sessionFiltersSchema, allParams);
+    const pagination = validateQueryParams(paginationSchema, allParams);
+
+    // Parse status filter if it's a comma-separated string
+    const processedFilters = {
+      ...filters,
+      status: filters.status ? filters.status.split(',') : undefined,
     };
-    
-    return NextResponse.json(newSession);
-  } catch (error) {
-    console.error('Error creating chat session:', error);
-    return NextResponse.json({ error: 'Failed to create session' }, { status: 500 });
-  }
-}
 
-export async function PUT(request: NextRequest) {
-  try {
-    const { sessionId, ...updateData } = await request.json();
-    
-    if (!sessionId) {
-      return NextResponse.json({ error: 'Session ID is required' }, { status: 400 });
-    }
-    
-    const client = await clientPromise;
-    const db = client.db('speicher');
-    
-    const result = await db.collection('chatSessions').updateOne(
-      { id: sessionId },
-      { 
-        $set: { 
-          ...updateData,
-          updatedAt: new Date().toISOString()
-        }
-      }
-    );
-    
-    if (result.matchedCount === 0) {
-      return NextResponse.json({ error: 'Session not found' }, { status: 404 });
-    }
-    
-    return NextResponse.json({ success: true });
-  } catch (error) {
-    console.error('Error updating chat session:', error);
-    return NextResponse.json({ error: 'Failed to update session' }, { status: 500 });
+    const result = await chatService.getSessions(processedFilters, pagination);
+
+    return NextResponse.json({
+      success: true,
+      data: result.data,
+      pagination: result.pagination,
+    });
+  },
+  {
+    rateLimit: { maxRequests: 200 }, // Higher limit for read operations
   }
-}
+);
+
+// POST /api/chat-sessions - Create new session
+export const POST = withMiddleware(
+  async (request: NextRequest) => {
+    const body = await request.json();
+    const sessionData = validateRequestBody(createChatSessionSchema, body);
+
+    // Check if session with same ID already exists
+    const existingSession = await chatService.getSessionById(sessionData.id);
+    if (existingSession) {
+      throw new ConflictError(
+        `Session with ID ${sessionData.id} already exists`
+      );
+    }
+
+    const newSession = await chatService.createSession(sessionData);
+
+    return NextResponse.json(
+      {
+        success: true,
+        data: newSession,
+      },
+      { status: 201 }
+    );
+  },
+  {
+    rateLimit: { maxRequests: 50 }, // Lower limit for write operations
+  }
+);
+
+// PUT /api/chat-sessions - Update existing session
+export const PUT = withMiddleware(
+  async (request: NextRequest) => {
+    const body = await request.json();
+    const updateData = validateRequestBody(updateChatSessionSchema, body);
+
+    const { sessionId, ...fieldsToUpdate } = updateData;
+
+    const updatedSession = await chatService.updateSession(
+      sessionId,
+      fieldsToUpdate
+    );
+
+    if (!updatedSession) {
+      throw new NotFoundError(`Session with ID ${sessionId} not found`);
+    }
+
+    return NextResponse.json({
+      success: true,
+      data: updatedSession,
+    });
+  },
+  {
+    rateLimit: { maxRequests: 100 },
+  }
+);

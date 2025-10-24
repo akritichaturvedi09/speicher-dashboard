@@ -3,6 +3,7 @@ import React from "react";
 
 const modules = [
   { name: "Inbox", label: "Inbox / Conversations" },
+  { name: "ChatHistory", label: "Chat History" },
   { name: "Leads", label: "Leads" },
   { name: "Analytics", label: "Analytics / Performance" },
   { name: "Sales", label: "Sales / Business Analytics" },

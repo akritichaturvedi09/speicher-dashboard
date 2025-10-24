@@ -1,24 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { withMiddleware } from '../../../lib/middleware';
 import clientPromise from '@/db/mongodb';
-
-
-export async function GET(request: NextRequest) {
-  try {
+export const GET = withMiddleware(
+  async (request: NextRequest) => {
     const client = await clientPromise;
     const db = client.db('speicher-chatbot');
-
-    const leads = await db
-      .collection('leads')
-      .find({})
-      .sort({ createdAt: -1 })
-      .toArray();
-
-    return NextResponse.json(leads);
-  } catch (error) {
-    console.error('Error fetching leads:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch leads' },
-      { status: 500 }
-    );
+     const data = await  db.collection('leads').find({}).sort({createdAt:-1}).toArray();
+    return NextResponse.json(data);
+  },
+  {
+    rateLimit: { maxRequests: 150 },
   }
-}
+);
