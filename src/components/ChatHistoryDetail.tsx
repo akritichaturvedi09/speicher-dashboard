@@ -224,7 +224,6 @@ export default function ChatHistoryDetail({
               {messages.map((message, index) => {
                 const isUser = message.sender === 'user';
                 const isAgent = message.sender === 'agent';
-                const isSystem = message.sender === 'system';
                 
                 return (
                   <div

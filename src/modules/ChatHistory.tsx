@@ -200,7 +200,7 @@ function ChatHistoryComponent() {
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to load chat sessions';
       dispatch({ type: 'SET_ERROR', payload: { key: 'sessions', value: errorMessage } });
-      handleError(error, 'Failed to load chat sessions');
+      handleError(String(error), 'Failed to load chat sessions');
     } finally {
       dispatch({ type: 'SET_LOADING', payload: { key: 'sessions', value: false } });
     }
@@ -242,7 +242,7 @@ function ChatHistoryComponent() {
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to load messages';
       dispatch({ type: 'SET_ERROR', payload: { key: 'messages', value: errorMessage } });
-      handleError(error, 'Failed to load session messages');
+      handleError(String(error), 'Failed to load session messages');
     } finally {
       dispatch({ type: 'SET_LOADING', payload: { key: 'messages', value: false } });
     }
@@ -267,15 +267,15 @@ function ChatHistoryComponent() {
       console.log('🔄 Session updated in Chat History:', data.session.id);
       
       // Update sessions list if the updated session is in our current list
-      dispatch((prevState) => ({
-        type: 'SET_SESSIONS',
-        payload: {
-          sessions: prevState.sessions.map((session) =>
-            session.id === data.session.id ? { ...session, ...data.session } : session
-          ),
-          pagination: prevState.sessionsPagination,
-        },
-      }));
+      dispatch({
+  type: 'SET_SESSIONS',
+  payload: {
+    sessions: state.sessions.map((session) =>
+      session.id === data.session.id ? { ...session, ...data.session } : session
+    ),
+    pagination: state.sessionsPagination,
+  },
+});
 
       // Update selected session if it's the one that was updated
       if (state.selectedSession && state.selectedSession.id === data.session.id) {
